@@ -23,6 +23,7 @@ library(caret)
 load("C:/Users/JoeD/Desktop/Files/Northwestern/450/Assignment 3/XYZ_complete_customer_data_frame.RData")
 
 cust.frame <- complete.customer.data.frame
+head(cust.frame)
 
 
 ```
