@@ -1,0 +1,439 @@
+---
+title: "450 Assignment 3 Solo"
+author: "Joe Dion"
+date: "November 22, 2015"
+output: pdf_document
+---
+
+
+
+```{r}
+#rm(list=ls())
+#str(df, list.len=ncol(df))
+#save.image()
+#dev.off()
+
+
+library(plyr)
+library(leaps)
+library(ROCR)
+library(randomForest)
+library(caret)
+
+load("C:/Users/JoeD/Desktop/Files/Northwestern/450/Assignment 3/XYZ_complete_customer_data_frame.RData")
+
+cust.frame <- complete.customer.data.frame
+
+
+```
+
+```{r}
+
+charvar <- cust.frame[c(1:3, 8:47, 49:50,52:61,153:154,159:221, 223:233, 235:244, 246:269,272:275, 277:279, 292:293, 299:302, 304:318, 554)]
+othervar <- cust.frame[c(281:291, 294:298)]
+numvar <- cust.frame[c(4:7,48,51,62:152,155:158,222, 234, 245, 270:271,276, 280,303, 451:553)]
+zvar <- cust.frame[c(319:450)]
+zvarchar <- zvar[c(1:9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31, 33, 35, 37, 39, 41, 43, 45, 47, 49, 51, 53, 55, 57, 59, 61, 63, 65, 67, 69, 71, 73, 75, 77, 79, 81, 83, 85, 87, 89, 91, 93, 95, 97, 99, 101, 103, 105, 107, 109, 111, 113, 115, 117, 119, 121, 123, 125, 127, 129, 131)]
+zvarnum <- zvar[c(10,12,14,16,18,20,22,24,26,28,30,32,34,36,38.40,42,44,46,48,50,52,54,56,58,60,62,64,66,68,70,72,74,76,78,80,82,84,86,88,90,92,94,96,98,100,102, 104, 106, 108, 110, 112, 114, 116, 118, 120, 122, 124, 126, 128,130)]
+
+charvar[charvar==""]<- "missing"
+numvar[is.na(numvar)] <- -1
+numvar[numvar==""] <- -1
+zvarchar[zvarchar==""] <- "missing"
+othervar[othervar==""] <- -1
+
+
+charvar[sapply(charvar, is.character)] <- lapply(charvar[sapply(charvar, is.character)], as.factor)       
+zvarchar[sapply(zvarchar, is.character)] <- lapply(zvarchar[sapply(zvarchar, is.character)], as.factor) 
+zvarnum[sapply(zvarnum, is.character)] <- lapply(zvarnum[sapply(zvarnum, is.character)], as.numeric) 
+othervar[sapply(othervar, is.character)] <- lapply(othervar[sapply(othervar, is.character)], as.numeric) 
+
+zvarnum[is.na(zvarnum)] <- -1
+
+cust.frame.merge <- cbind(charvar, numvar, zvarchar, zvarnum, othervar)
+
+
+```
+
+
+
+```{r}
+
+df <- cust.frame.merge
+colnames(df)
+
+varnum <- c()
+vartype <- c()
+for (i in 1:length(df)) {
+varnum[i] <- length(unique(df[,i]))
+vartype[i]<- class(df[,i])
+}  
+
+varlist <- data.frame(cbind(colnames(df), varnum, vartype))
+varlistchar <- subset(varlist, vartype=='factor')
+varlistchar$varnum <- as.numeric(varlistchar$varnum)
+varlistchar <- subset(varlistchar, (varnum < 20 & varnum > 1))
+varlistnum <- subset(varlist, vartype %in% c("numeric", "integer", "character"))
+
+variables <- varlistchar[,1]
+variables2 <- varlistnum[,1]
+
+variablesnew <- as.data.frame(variables)
+variablesnew2 <- as.data.frame(variables2)
+
+colnames(variablesnew2) <- "variables"
+
+var <- as.vector(rbind(variablesnew, variablesnew2))
+var <- as.vector(var$variables)
+
+
+vars <- var[c(3, 5:6, 8:25, 34:140, 156,  188, 242:317)]
+
+```
+
+
+
+
+
+```{r, echo=FALSE}
+cust.frame.mail16 <- df[ which(df$ANY_MAIL_16==1), ]
+
+MAIL_16 <- cust.frame.mail16
+
+
+```
+
+```{r}
+set.seed(123)
+smp_size <- floor(0.7 * nrow(MAIL_16))
+train_ind <- sample(seq_len(nrow(MAIL_16)), size = smp_size)
+# split the data
+train <- MAIL_16[train_ind, ]
+test <- MAIL_16[-train_ind, ]
+
+
+```
+
+
+
+```{r}
+
+Vars<- vars
+FormulaV <- as.formula(paste('RESPONSE16', paste (Vars, collapse = ' + '), sep = ' ~ '))
+
+train$RESPONSE16 <- as.factor(train$RESPONSE16)
+
+rf <- randomForest(FormulaV, data=train, importance = TRUE )
+
+
+
+varImpPlot(rf, main = 'Variable Importance')
+varImp(rf)
+varlist <- (VI_F=importance(rf))
+
+varlistnew <- as.data.frame(varlist)
+
+varlistnew1 <- varlistnew[varlistnew$MeanDecreaseAccuracy>=9,]
+varlistnew1 <- varlistnew1[with(varlistnew1, order(-MeanDecreaseAccuracy)), ]
+varlistnew1
+
+
+
+```
+
+```{r}
+train$rfvsPred<-predict(rf, newdata = train, type="response")
+
+#Confusion matrix
+rfconfusion <- table(truth = train$RESPONSE16, prediction = train$rfvsPred)
+rfconfusion
+
+#ROC Curve
+rfroc <- prediction(as.numeric(train$rfvsPred), train$RESPONSE16)
+rfrocchart <-performance(rfroc, "tpr", "fpr")
+plot(rfrocchart)
+abline(a=0, b= 1)
+
+#AUC
+auc <- performance(rfroc,"auc")
+auc <- unlist(slot(auc, "y.values"))
+auc
+
+test$rfvsPred<-predict(rf, newdata = test, type="response")
+
+#Confusion matrix
+rfconfusiontest <- table(truth = test$RESPONSE16, prediction = test$rfvsPred)
+rfconfusiontest
+
+#ROC Curve
+rfroctest <- prediction(as.numeric(test$rfvsPred), test$RESPONSE16)
+rfroctestchart <-performance(rfroctest, "tpr", "fpr")
+plot(rfroctestchart)
+abline(a=0, b= 1)
+
+#AUC
+auc <- performance(rfroctest,"auc")
+auc <- unlist(slot(auc, "y.values"))
+auc
+
+
+```
+
+
+
+```{r}
+
+leaps<-regsubsets(FormulaV, data=train , nbest = 1, nvmax = 10, force.in = NULL, 
+    force.out = NULL, method = "forward", really.big = T)
+
+plot(leaps,scale = "adjr2", main = "Adjusted R^2")
+summary(leaps)
+
+```
+
+```{r}
+selectvar <- c("PRE2009_TRANSACTIONS","PRE2009_SALES","ECHVPCT","INC_SCS_AMT_V4","CA07_09I","MGZ_HLTH","INC_WOUTSCS_AMT_4","NAT_INC","DM_FEM","P_IND_FINALNCE","BUY_AMERICAN","NEWS","CHILDPROB","ZMUSCLAP","CNTY_INC","ZPRCHTVP","CA04_06I","CA10_12I","CA13_18I","P_OWNOCC","ON_THE_ROAD","CON_POLT","MED_HOME","POP25_34","DM_GEN","ZCOLLECP","TOTAL_MAIL_16","SUM_MAIL_16","CON_RELG")
+
+
+RFSelected <- c("X","X","X","X","X","X","X","X","X","X","X","X","X","X","X","X","X","X","X","X","X","X","X","X","X",""  ,""  ,""  ,"" )
+LEAPSSelected <- c("X","" ,"" ,"" ,"","","X","","","X","","","","","","","","","","","","","","","X","x","x","x","x")
+allvar <- cbind(selectvar, RFSelected, LEAPSSelected)
+allvar
+
+```
+
+
+
+```{r}
+ 
+FormulaV1 <- as.formula(paste('RESPONSE16', paste (selectvar, collapse = ' + '), sep = ' ~ '))
+
+fit <- glm(FormulaV1 , data=train,family=binomial(link="logit"))
+
+fit <- glm(RESPONSE16 ~  PRE2009_TRANSACTIONS + PRE2009_SALES + ECHVPCT + NEWS + MGZ_HLTH + CA07_09I + CA04_06I + CA10_12I + INC_SCS_AMT_V4 + INC_WOUTSCS_AMT_4 + CHILDPROB + MGZ_FAM + CON_POLT +DM_FEM + P_IND_FINALNCE + STOP_SMELL_ROSES + ZPRCHPHP + MED_FAMINCOM + CNTY_INC + NAT_INC + ITMM_SCS , data=train,family=binomial(link="logit"))
+
+summary(fit) 
+
+train$log <- predict(fit, newdata=train, type="response")
+
+#Confusion matrix
+
+logconfusion <- table(truth = train$RESPONSE16, prediction = train$log>.5)
+logconfusion
+
+#ROC Curve
+logroc <- prediction(as.numeric(train$log), train$RESPONSE16)
+logrocchart <-performance(logroc, "tpr", "fpr")
+plot(logrocchart)
+abline(a=0, b= 1)
+
+
+#AUC
+
+auc <- performance(logroc,"auc")
+auc <- unlist(slot(auc, "y.values"))
+auc
+
+test$log <- predict(fit, newdata=test, type="response")
+
+#Confusion matrix
+logtestconfusion <- table(truth = test$RESPONSE16, prediction = test$log)
+logtestconfusion
+
+#ROC Curve
+logtestroc <- prediction(as.numeric(test$log), test$RESPONSE16)
+logtestrocchart <-performance(logtestroc, "tpr", "fpr")
+plot(logtestrocchart)
+abline(a=0, b= 1)
+
+#AUC
+
+auc <- performance(logtestroc,"auc")
+auc <- unlist(slot(auc, "y.values"))
+auc
+
+
+```
+
+
+
+```{r}
+rf1 <- randomForest(FormulaV1, data=train, importance = TRUE )
+
+train$rffullvarPred<-predict(rf1, newdata = train, type="response")
+
+
+#Confusion matrix
+
+rffullvarconfusion <- table(truth = train$RESPONSE16, prediction = train$rffullvarPred)
+rffullvarconfusion 
+
+#ROC Curve
+
+rffullvarroc <- prediction(as.numeric(train$rffullvarPred), train$RESPONSE16)
+rffullvarrocchart <-performance(rffullvarroc, "tpr", "fpr")
+plot(rffullvarrocchart)
+abline(a=0, b= 1)
+
+
+#AUC
+
+auc <- performance(rfroc,"auc")
+auc <- unlist(slot(auc, "y.values"))
+auc
+
+
+
+test$rffullvarPred<-predict(rf1, newdata = test, type="response")
+
+#Confusion matrix
+
+rffullvarconfusion <- table(truth = test$RESPONSE16, prediction = test$rffullvarPred)
+rffullvarconfusion 
+
+#ROC Curve
+rffullvarroc <- prediction(as.numeric(test$rffullvarPred), test$RESPONSE16)
+rffullvarrocchart <-performance(rffullvarroc, "tpr", "fpr")
+plot(rffullvarrocchart)
+abline(a=0, b= 1)
+
+#AUC
+auc <- performance(rfroc,"auc")
+auc <- unlist(slot(auc, "y.values"))
+auc
+
+
+```
+
+```{r}
+rf2 <- randomForest(RESPONSE16 ~  ECHVPCT + 
+    INC_SCS_AMT_V4 + CA07_09I + MGZ_HLTH + INC_WOUTSCS_AMT_4 + 
+    NAT_INC + DM_FEM + P_IND_FINALNCE + BUY_AMERICAN + NEWS + 
+    CHILDPROB + ZMUSCLAP + CNTY_INC + ZPRCHTVP + CA04_06I + CA10_12I + 
+    CA13_18I + P_OWNOCC + ON_THE_ROAD + CON_POLT + MED_HOME + 
+    POP25_34 + DM_GEN + ZCOLLECP  + CON_RELG , data=train, importance = TRUE )
+
+#removed + TOTAL_MAIL_16 + SUM_MAIL_16 + PRE2009_TRANSACTIONS + PRE2009_SALES
+
+train$rffullvarPred2<-predict(rf2, newdata = train, type="response")
+
+
+#Confusion matrix
+
+rffullvarconfusion2 <- table(truth = train$RESPONSE16, prediction = train$rffullvarPred2)
+rffullvarconfusion2
+
+#ROC Curve
+
+rffullvarnewroc <- prediction(as.numeric(train$rffullvarPrednew), train$RESPONSE16)
+rffullvarnewrocchart <-performance(rffullvarnewroc, "tpr", "fpr")
+plot(rffullvarnewrocchart)
+abline(a=0, b= 1)
+
+
+#AUC
+
+auc <- performance(rffullvarnewroc ,"auc")
+auc <- unlist(slot(auc, "y.values"))
+auc
+
+
+```
+
+#Apply Random Forrest to Test
+```{r}
+
+test$rf2<-predict(rf2, newdata = test, type="response")
+
+
+#Confusion matrix
+
+rftest <- table(truth = test$RESPONSE16, prediction = test$rf2)
+rftest
+
+#ROC Curve
+
+rftestroc <- prediction(as.numeric(test$rf), test$RESPONSE16)
+rftestrocchart <-performance(rftestroc, "tpr", "fpr")
+plot(rftestrocchart )
+abline(a=0, b= 1)
+
+
+#AUC
+
+auc <- performance(rftestroc,"auc")
+auc <- unlist(slot(auc, "y.values"))
+auc
+
+
+
+
+```
+
+
+```{r}
+fit1 <- glm(RESPONSE16 ~  ECHVPCT + 
+    INC_SCS_AMT_V4 + CA07_09I + MGZ_HLTH + INC_WOUTSCS_AMT_4 + 
+    NAT_INC + DM_FEM + P_IND_FINALNCE + BUY_AMERICAN + NEWS + 
+    CHILDPROB + ZMUSCLAP + CNTY_INC + ZPRCHTVP + CA04_06I + CA10_12I + 
+    CA13_18I + P_OWNOCC + ON_THE_ROAD + CON_POLT + MED_HOME + 
+    POP25_34 + DM_GEN + ZCOLLECP  + CON_RELG, data=train,family=binomial(link="logit"))
+
+summary(fit1) 
+
+train$log1 <- predict(fit1, data=train, type="response")
+
+
+#Confusion matrix
+#train_16$loground <- round(train_16$log, digits= 0)
+log1confusion <- table(truth = train$RESPONSE16, prediction = train$log1)
+log1confusion 
+
+#ROC Curve
+log1roc <- prediction(as.numeric(train$log1), train$RESPONSE16)
+log1rocchart <-performance(log1roc, "tpr", "fpr")
+plot(log1rocchart)
+abline(a=0, b= 1)
+
+
+#AUC
+
+auc <- performance(log1roc,"auc")
+auc <- unlist(slot(auc, "y.values"))
+auc
+
+```
+
+#Apply logistic to test
+
+```{r}
+summary(test)
+
+test$log1 <- predict(fit1, test, type="response")
+str(test$BUY_AMERICAN)
+str(train$BUY_AMERICAN)
+
+summary(fit1)
+
+#Confusion matrix
+
+log1testconfusion <- table(truth = test$RESPONSE16, prediction = test$log1)
+log1testconfusion 
+
+#ROC Curve
+log1roc <- prediction(as.numeric(train$log1), train$RESPONSE16)
+log1rocchart <-performance(log1roc, "tpr", "fpr")
+plot(log1rocchart)
+abline(a=0, b= 1)
+
+
+#AUC
+
+auc <- performance(log1roc,"auc")
+auc <- unlist(slot(auc, "y.values"))
+auc
+
+
+```
+
+
