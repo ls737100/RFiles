@@ -1,0 +1,21 @@
+---
+title: "SQL connect"
+author: "Joe Dion"
+date: "May 18, 2016"
+output: html_document
+---
+
+
+```{r, echo=FALSE}
+library(RODBC)
+con  <- odbcConnect("SQLSERVER", uid="joed", pwd="84Mooney&")
+p <- sqlQuery(con, "SELECT * FROM OneTechnologies.dbo.FirstSignOn");
+print(p)
+summary(p)
+ncol(p)
+close(con);
+RShowDoc("RODBC", package="RODBC")
+
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
